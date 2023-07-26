@@ -8,3 +8,40 @@
  *课程请见：https://study.163.com/course/introduction.htm?courseId=1212765805&_trace_c_p_k2_=0bdf1e7edda543a8b9a0ad73b5100990
  */
 #include "os.h"
+
+//  类型定义
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+
+#define PDE_P   (1 << 0)  // PDE页表项的存在位
+#define PDE_W   (1 << 1)  // PDE页表项的读写位
+#define PDE_U   (1 << 2)  // PDE页表项的权限位——是否会被低内存级的段读写
+#define PDE_PS  (1 << 7)  // PDE页表项的大小是4KB还是4MB——1为4MB
+
+#define MAP_ADDR    0x80000000      // map_phy_buffer映射到的虚拟内存地址
+uint8_t map_phy_buffer[4096] __attribute__((aligned(4096))) = {0x36};                                           // 映射一个4KB大小的空间
+
+static uint32_t page_table[1024] __attribute__((aligned(4096))) = {PDE_U};
+
+uint32_t pg_dir[1024] __attribute__((aligned(4096))) = {                                                        // 页目录表     以4KB对齐
+    [0] = (0) | PDE_P | PDE_W |PDE_U | PDE_PS,
+};
+
+struct{uint16_t limit_l,base_l,basehl_attr,base_limit;}gbt_table[256] __attribute__((aligned(8))) = {           // 全局描述符表  __attribute__((aligned(8)))以8字节对齐
+    // 0x00cf9a000000ffff - 从0地址开始，P存在，DPL=0，Type=非系统段，32位代码段（非一致代码段），界限4G，
+    // 00000000 11001111 10011010 00000000      0x00 0xcf 0x9a 0x00
+    // 00000000 00000000 11111111 11111111      0x00 0x00 0xff 0xff
+    [KERNEL_CODE_SEG / 8] = {0xffff, 0x0000, 0x9a00, 0x00cf},
+    // 0x00cf92000000ffff - 从0地址开始，P存在，DPL=0，Type=非系统段，数据段，界限4G，可读写
+    // 00000000 11001111 10010010 00000000      0x00 0xcf 0x92 0x00
+    // 00000000 00000000 11111111 11111111      0x00 0x00 0xff 0xff
+    [KERNEL_DATA_SEG / 8] = {0xffff, 0x0000, 0x9200, 0x00cf},
+};
+
+/// @brief 在虚拟内存地址为0x80000000的地方映射一块4KB的空间
+/// @param
+void os_init(void){
+    pg_dir[MAP_ADDR >> 22]= (uint32_t)page_table | PDE_P | PDE_W | PDE_U;
+    page_table[(MAP_ADDR >> 12) & 0x3ff] = (uint32_t)map_phy_buffer | PDE_P | PDE_W | PDE_U;
+}
