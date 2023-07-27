@@ -14,6 +14,31 @@ typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 
+void task_0(void){
+    uint8_t color = 0;
+
+    for(;;){
+        color--;
+    }
+}
+
+void task_1(void){
+    uint8_t color = 0;
+
+    for(;;){
+        color++;
+    }
+}
+
+void task_sched(void){
+    static int task_tss = TASK0_TSS_SEG;
+
+    task_tss = (task_tss == TASK0_TSS_SEG? TASK1_TSS_SEG: TASK0_TSS_SEG);
+
+    uint32_t addr[] = {0, task_tss};
+    __asm__ __volatile("ljmpl *(%[a])"::[a]"r"(addr));
+}
+
 #define PDE_P   (1 << 0)  // PDE页表项的存在位
 #define PDE_W   (1 << 1)  // PDE页表项的读写位
 #define PDE_U   (1 << 2)  // PDE页表项的权限位——是否会被低内存级的段读写
@@ -28,6 +53,30 @@ uint32_t pg_dir[1024] __attribute__((aligned(4096))) = {                        
     [0] = (0) | PDE_P | PDE_W |PDE_U | PDE_PS,
 };
 
+/// @brief 栈段
+uint32_t task0_dpl3_stack[1024], task0_dpl0_stack[1024], task1_dpl3_stack[1024], task1_dpl0_stack[1024];
+
+/**
+ * @brief 任务0的任务状态段
+ */
+uint32_t task0_tss[] = {
+    // prelink, esp0, ss0, esp1, ss1, esp2, ss2
+    0,  (uint32_t)task0_dpl0_stack + 4*1024, KERNEL_DATA_SEG , /* 后边不用使用 */ 0x0, 0x0, 0x0, 0x0,
+    // cr3, eip, eflags, eax, ecx, edx, ebx, esp, ebp, esi, edi,
+    (uint32_t)pg_dir,  (uint32_t)task_0/*入口地址*/, 0x202, 0xa, 0xc, 0xd, 0xb, (uint32_t)task0_dpl3_stack + 4*1024/* 栈 */, 0x1, 0x2, 0x3,
+    // es, cs, ss, ds, fs, gs, ldt, iomap
+    APP_DATA_SEG, APP_CODE_SEG, APP_DATA_SEG, APP_DATA_SEG, APP_DATA_SEG, APP_DATA_SEG, 0x0, 0x0,
+};
+
+uint32_t task1_tss[] = {
+    // prelink, esp0, ss0, esp1, ss1, esp2, ss2
+    0,  (uint32_t)task1_dpl0_stack + 4*1024, KERNEL_DATA_SEG , /* 后边不用使用 */ 0x0, 0x0, 0x0, 0x0,
+    // cr3, eip, eflags, eax, ecx, edx, ebx, esp, ebp, esi, edi,
+    (uint32_t)pg_dir,  (uint32_t)task_1/*入口地址*/, 0x202, 0xa, 0xc, 0xd, 0xb, (uint32_t)task1_dpl3_stack + 4*1024/* 栈 */, 0x1, 0x2, 0x3,
+    // es, cs, ss, ds, fs, gs, ldt, iomap
+    APP_DATA_SEG, APP_CODE_SEG, APP_DATA_SEG, APP_DATA_SEG, APP_DATA_SEG, APP_DATA_SEG, 0x0, 0x0,
+};
+
 struct{uint16_t offset_l, selector, attr, offset_h;}idt_table[256] __attribute__((aligned(8)));
 
 struct{uint16_t limit_l,base_l,basehl_attr,base_limit;}gbt_table[256] __attribute__((aligned(8))) = {           // 全局描述符表  __attribute__((aligned(8)))以8字节对齐
@@ -39,6 +88,12 @@ struct{uint16_t limit_l,base_l,basehl_attr,base_limit;}gbt_table[256] __attribut
     // 00000000 11001111 10010010 00000000      0x00 0xcf 0x92 0x00
     // 00000000 00000000 11111111 11111111      0x00 0x00 0xff 0xff
     [KERNEL_DATA_SEG / 8] = {0xffff, 0x0000, 0x9200, 0x00cf},
+
+    [APP_CODE_SEG / 8] = {0xffff, 0x0000, 0xfa00, 0x00cf},
+    [APP_DATA_SEG / 8] = {0xffff, 0x0000, 0xf200, 0x00cf},
+
+    [TASK0_TSS_SEG / 8] = {0x68, 0, 0xe900, 0},
+    [TASK1_TSS_SEG / 8] = {0x68, 0, 0xe900, 0},
 };
 
 /// @brief 调用汇编函数outb
@@ -81,6 +136,10 @@ void os_init(void){
     idt_table[0x20].offset_h = (uint32_t)timer_init >> 16;
     idt_table[0x20].selector = KERNEL_CODE_SEG;
     idt_table[0x20].attr = 0x8e00;                              // 0x8e00 1000 1110 0000 0000  32位，中断门，存在
+
+    // 设置两个任务段选择子的基地址
+    gbt_table[TASK0_TSS_SEG / 8].base_l = (uint16_t)(uint32_t)task0_tss;
+    gbt_table[TASK1_TSS_SEG / 8].base_l = (uint16_t)(uint32_t)task1_tss;
 
     // 在虚拟内存地址为0x80000000的地方映射一块4KB的空间
     pg_dir[MAP_ADDR >> 22]= (uint32_t)page_table | PDE_P | PDE_W | PDE_U;

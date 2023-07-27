@@ -75,7 +75,18 @@ _start_32:
 	mov %eax, %cr0
 
 	sti						// 开中断
-	jmp .
+
+	// 设置任务寄存器TR为task0 TSS的段选择子
+	mov $TASK0_TSS_SEG, %ax
+	ltr %ax
+
+	push $APP_DATA_SEG		     		// %ss
+	push $task0_dpl3_stack + 1024 * 4	// %esp
+	push $0x202							// %eflags
+	push $APP_CODE_SEG					// %cs
+	push $task_0_entry					// %eip
+
+	iret
 
 timer_init:					// 中断处理函数
 	push %ds
@@ -84,14 +95,26 @@ timer_init:					// 中断处理函数
 	mov $0x20, %al
 	outb %al, $0x20
 
+	mov $KERNEL_DATA_SEG, %ax
+	mov %ax, %ds
+	call task_sched
+
 	popa
 	pop %ds
 	iret					//中断返回
 
-gdt_desc:
+task_0_entry:				// 特权级为3的任务
+	mov %ss, %ax
+	mov %ax, %ds
+	mov %ax, %es
+	mov %ax, %gs
+ 	mov %ax, %fs
+	jmp task_0
+
+gdt_desc:					// GDT表
 	.word (256*8) - 1		// 16位界限
 	.long gbt_table			// 32位基地址，即gbt_table的内存地址
 
-idt_desc:
+idt_desc:					// IDT表
 	.word (256*8) - 1
 	.long idt_table
