@@ -10,7 +10,7 @@
 	#include "os.h"
 
 	// 声明本地以下符号是全局的，在其它源文件中可以访问
-	.global _start
+	.global _start, timer_init
 
 	// 指定以下的代码生成16位的机器指令，这样才能在启动时的实模式下运行
   	.code16
@@ -37,7 +37,8 @@ read_self_all:
 
 	cli						// 关中断
 
-	lgdt [gdt_desc]			// 读取GDT表的段选择子
+	lgdt [gdt_desc]			// 设置GDT表的内存地址
+	lidt [idt_desc]			// 设置IDT表的内存地址
 	// 将寄存器cr0的第一位置1，即进入保护模式
 	mov $1, %eax
 	lmsw %ax
@@ -73,9 +74,24 @@ _start_32:
 	orl $(1 << 31), %eax
 	mov %eax, %cr0
 
-
+	sti						// 开中断
 	jmp .
+
+timer_init:					// 中断处理函数
+	push %ds
+	pusha
+
+	mov $0x20, %al
+	outb %al, $0x20
+
+	popa
+	pop %ds
+	iret					//中断返回
 
 gdt_desc:
 	.word (256*8) - 1		// 16位界限
 	.long gbt_table			// 32位基地址，即gbt_table的内存地址
+
+idt_desc:
+	.word (256*8) - 1
+	.long idt_table
