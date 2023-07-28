@@ -14,19 +14,48 @@ typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 
+/// @brief 系统调用函数(目前只有显示字符串)
+/// @param func 功能号
+/// @param str  需要显示的字符串
+/// @param color    字符串颜色
+void do_syscall(int func, char *str, char color){
+    static int row = 0;                 // 行号
+
+    if(func == 2){                      // 显示字符串
+        uint16_t *dest = (uint16_t*) 0xb8000 + 80 * row;
+        while (*str)
+        {
+            *dest++ = *str++ | (color << 8);
+        }
+
+        row = (row >= 25) ? 0 : (row + 1);
+    }
+    for(int i = 0; i < 0xfffff; i++);
+}
+
+/// @brief 使用系统调用门调用do_syscall函数
+/// @param str  需要显示的字符串
+/// @param color    字符串的颜色
+void sys_show(char *str, char color){
+    uint32_t addr[] = {0, SYSCALL_SEG};
+    __asm__ __volatile("push %[color]; push %[str]; push %[id]; lcall *(%[a])"::[a]"r"(addr), [color]"m"(color), [str]"m"(str), [id]"r"(2));
+}
+
 void task_0(void){
+    char* str = "task a: 1234";
     uint8_t color = 0;
 
     for(;;){
-        color--;
+        sys_show(str, color++);
     }
 }
 
 void task_1(void){
+    char* str = "task b: 5678";
     uint8_t color = 0;
 
     for(;;){
-        color++;
+        sys_show(str, color--);
     }
 }
 
@@ -94,6 +123,8 @@ struct{uint16_t limit_l,base_l,basehl_attr,base_limit;}gbt_table[256] __attribut
 
     [TASK0_TSS_SEG / 8] = {0x68, 0, 0xe900, 0},
     [TASK1_TSS_SEG / 8] = {0x68, 0, 0xe900, 0},
+
+    [SYSCALL_SEG / 8] = {0, KERNEL_CODE_SEG, 0xec03, 0},
 };
 
 /// @brief 调用汇编函数outb
@@ -105,6 +136,7 @@ void outb(uint8_t data, uint16_t port){
 
 // 声明汇编代码中的自定义函数
 void timer_init(void);
+void syscall_handler(void);
 
 /// @brief 对os进行初始化
 /// @param
@@ -141,7 +173,10 @@ void os_init(void){
     gbt_table[TASK0_TSS_SEG / 8].base_l = (uint16_t)(uint32_t)task0_tss;
     gbt_table[TASK1_TSS_SEG / 8].base_l = (uint16_t)(uint32_t)task1_tss;
 
+    // 设置系统调用门的段偏移量
+    gbt_table[SYSCALL_SEG / 8].limit_l = (uint16_t)(uint32_t)syscall_handler;
+
     // 在虚拟内存地址为0x80000000的地方映射一块4KB的空间
     pg_dir[MAP_ADDR >> 22]= (uint32_t)page_table | PDE_P | PDE_W | PDE_U;
-    page_table[(MAP_ADDR >> 12) & 0x3ff] = (uint32_t)map_phy_buffer | PDE_P | PDE_W | PDE_U;
+    page_table[(MAP_ADDR >> 12) & 0x3ff] = (uint32_t)map_phy_buffer | PDE_P | PDE_W;
 }

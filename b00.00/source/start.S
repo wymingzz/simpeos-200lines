@@ -10,7 +10,7 @@
 	#include "os.h"
 
 	// 声明本地以下符号是全局的，在其它源文件中可以访问
-	.global _start, timer_init
+	.global _start, timer_init, syscall_handler
 
 	// 指定以下的代码生成16位的机器指令，这样才能在启动时的实模式下运行
   	.code16
@@ -102,6 +102,25 @@ timer_init:					// 中断处理函数
 	popa
 	pop %ds
 	iret					//中断返回
+
+syscall_handler:
+	push %ds
+	pusha
+
+	mov $KERNEL_DATA_SEG, %ax
+	mov %ax, %ds
+
+	// 从函数的最后一个参数开始压入栈中
+	mov %esp, %ebp
+	push 13 * 4(%ebp)
+	push 12 * 4(%ebp)
+	push 11 * 4(%ebp)
+	call do_syscall
+	add $(3 * 4), %esp
+
+	popa
+	pop %ds
+	retf $(3 * 4)
 
 task_0_entry:				// 特权级为3的任务
 	mov %ss, %ax

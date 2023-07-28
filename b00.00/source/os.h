@@ -19,4 +19,6 @@
 #define TASK0_TSS_SEG ((5 * 8))
 #define TASK1_TSS_SEG ((6 * 8))
 
+#define SYSCALL_SEG ((7 * 8))
+
 #endif // OS_H
