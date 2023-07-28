@@ -80,10 +80,14 @@ _start_32:
 	mov $TASK0_TSS_SEG, %ax
 	ltr %ax
 
-	push $APP_DATA_SEG		     		// %ss
+	// 设置TASK0的LDT表
+	mov $TASK0_LDT_SEG, %ax
+	lldt %ax
+
+	push $TASK_DATA_SEG		     		// %ss
 	push $task0_dpl3_stack + 1024 * 4	// %esp
 	push $0x202							// %eflags
-	push $APP_CODE_SEG					// %cs
+	push $TASK_CODE_SEG					// %cs
 	push $task_0_entry					// %eip
 
 	iret
